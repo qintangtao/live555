@@ -1,0 +1,181 @@
+#include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include "sem_comm.h"
+
+ 
+pid_t pid;
+int shmid;//要映射的共享内存区标识符
+int semid;//定义信号量，用于实现共享内存的进程之间的互斥
+char *shm_addr;//共享内存映射到的地址
+
+typedef struct share_mem
+{
+	int len;
+	//int idx;
+	unsigned char data[1024*512];
+}share_mem;
+
+static int g_idx = 0;
+
+void function_init()
+{
+	//创建一个信号量
+	semid = semget(ftok("/home",2), 1, 0666|IPC_CREAT);
+	sem_init(semid, 1);//初始值为1
+	
+	//创建共享内存
+	shmid = shmget(80000, sizeof(share_mem), 0666|IPC_CREAT);
+	if (shmid < 0) {
+		perror("shmget");
+		exit(1);
+	} else {
+		printf("create shard-memory shmid: %d\n", shmid);
+	}
+	
+}
+ 
+void function_end()
+{
+	//删除信号量
+	sem_del(semid);	
+	//解除共享内存映射
+	if ((shmdt(shm_addr)) < 0) {
+		perror("shmdt");
+		exit(1);
+	} 
+		
+	//删除共享内存IPC_RMID	删除共享内存段
+	if (shmctl(shmid, IPC_RMID, NULL) == -1) {
+		perror("shmctl");
+		exit(1);
+	} else {
+		printf("Delete shared-memory\n");
+	}
+		
+}
+
+int main()
+{
+	struct share_mem* pch_shmem;
+	FILE *fp;
+	int pos;
+	int len;
+	int loop = 10000;
+
+	function_init();
+	
+	//映射共享内存
+	shm_addr = shmat(shmid, 0, 0);
+
+	pch_shmem = ( struct share_mem* )shm_addr;
+
+	fp = fopen("test.264", "rb");
+	if (fp)
+	{
+		while (loop--)
+		{
+			pos = 0;
+			while(1)
+			{
+				sem_p(semid);//信号值减一
+				
+				//pch_shmem->len = fread(pch_shmem->data, sizeof(unsigned char), 1024*512, fp);
+
+				while (1)
+				{
+					fseek(fp, pos, SEEK_SET);
+
+					pch_shmem->len = fread(pch_shmem->data, sizeof(unsigned char), 1024*512, fp);
+					if (pch_shmem->len <= 0) {
+						pos = 0;
+						continue;
+					}
+
+					len = 0;
+					if (pch_shmem->data[len] == 0x00 &&
+						pch_shmem->data[len+1] == 0x00 &&
+						pch_shmem->data[len+2] == 0x00 &&
+						pch_shmem->data[len+3] == 0x01 )
+						break;
+
+					// find first 00 00 00 01
+					//0 0 1 1 1 1 1 1 0 0    0 1
+					//0 1 2 3 4 5 6 7 8
+
+					len = 0;
+					while((len+3) < pch_shmem->len)
+					{
+						if (pch_shmem->data[len] == 0x00 &&
+							pch_shmem->data[len+1] == 0x00 &&
+							pch_shmem->data[len+2] == 0x00 &&
+							pch_shmem->data[len+3] == 0x01 )
+							break;
+
+						len++;
+					}
+
+					pos += len;
+				}
+				
+
+				// find next 00 00 00 01
+				//0 0 0 1 1 1 1 1 1 0 0 0 1
+				//0 1 2 3 4 5 6
+
+				//0 0 0 1 1 1 1 1 1
+				//0 1 2 3 4 5 6 7 8
+
+				len = 4;
+				while((len+3) < pch_shmem->len)
+				{
+					if (pch_shmem->data[len] == 0x00 &&
+						pch_shmem->data[len+1] == 0x00 &&
+						pch_shmem->data[len+2] == 0x00 &&
+						pch_shmem->data[len+3] == 0x01 )
+						break;
+
+					len++;
+				}
+
+				if ((len+3) < pch_shmem->len)
+					pch_shmem->len = len;
+
+#if 1
+				printf("writelen:%d, pos:%d\n",pch_shmem->len,pos);
+#else
+				pch_shmem->idx = g_idx++;
+				printf("writelen:%d, pos:%d, idx:%d\n",pch_shmem->len,pos, pch_shmem->idx);
+#endif
+				sem_v(semid);
+
+				if(pch_shmem->len<=0)
+				{
+					perror("writelen\n");
+					break;
+				}
+
+				pos += pch_shmem->len;
+
+				usleep(60*1000);
+			}
+		}
+		
+
+		fclose(fp);
+	}
+	else
+	{
+		printf("error:open file %s failed!", "test.264");
+	}
+
+			
+	function_end();	
+
+	exit(0);
+}
