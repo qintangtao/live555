@@ -22,11 +22,15 @@ along with this library; if not, write to the Free Software Foundation, Inc.,
 #include "version.hh"
 #include <GroupsockHelper.hh> // for "weHaveAnIPv*Address()"
 
+
+#include "H264LiveVideoServerMediaSubssion.hh"
+#include "H264VideoFileServerMediaSubsession.hh"
+
 int main(int argc, char** argv) {
   // Begin by setting up our usage environment:
   TaskScheduler* scheduler = BasicTaskScheduler::createNew();
   UsageEnvironment* env = BasicUsageEnvironment::createNew(*scheduler);
-
+  Boolean reuseFirstSource = false;
   UserAuthenticationDatabase* authDB = NULL;
 #ifdef ACCESS_CONTROL
   // To implement client access control to the RTSP server, do the following:
@@ -40,15 +44,26 @@ int main(int argc, char** argv) {
   // and then with the alternative port number (8554):
   RTSPServer* rtspServer;
   portNumBits rtspServerPortNum = 554;
-  rtspServer = DynamicRTSPServer::createNew(*env, rtspServerPortNum, authDB);
+  rtspServer = RTSPServer::createNew(*env, rtspServerPortNum, authDB);
   if (rtspServer == NULL) {
     rtspServerPortNum = 8554;
-    rtspServer = DynamicRTSPServer::createNew(*env, rtspServerPortNum, authDB);
+    rtspServer = RTSPServer::createNew(*env, rtspServerPortNum, authDB);
   }
   if (rtspServer == NULL) {
     *env << "Failed to create RTSP server: " << env->getResultMsg() << "\n";
     exit(1);
   }
+
+  const char *streamName = "avstream";
+  char const* fileName = "test.264";
+  char const* descriptionString= "Session streamed by oo's server";
+  
+  OutPacketBuffer::maxSize = 200000; // allow for some possibly large H.264 frames
+  //                         114088
+  ServerMediaSession* sms = ServerMediaSession::createNew(*env, streamName, streamName, descriptionString);
+  sms->addSubsession(H264LiveVideoServerMediaSubssion::createNew(*env, fileName, reuseFirstSource));
+  rtspServer->addServerMediaSession(sms);
+
 
   *env << "LIVE555 Media Server\n";
   *env << "\tversion " << MEDIA_SERVER_VERSION_STRING
@@ -58,15 +73,17 @@ int main(int argc, char** argv) {
   *env << "Play streams from this server using the URL\n";
   if (weHaveAnIPv4Address(*env)) {
     char* rtspURLPrefix = rtspServer->ipv4rtspURLPrefix();
-    *env << "\t" << rtspURLPrefix << "<filename>\n";
+    *env << "\t" << rtspURLPrefix << streamName << "\n";//"<filename>\n";
     delete[] rtspURLPrefix;
     if (weHaveAnIPv6Address(*env)) *env << "or\n";
   }
   if (weHaveAnIPv6Address(*env)) {
     char* rtspURLPrefix = rtspServer->ipv6rtspURLPrefix();
-    *env << "\t" << rtspURLPrefix << "<filename>\n";
+    *env << "\t" << rtspURLPrefix << streamName << "\n";//"<filename>\n";
     delete[] rtspURLPrefix;
   }
+
+#if 0
   *env << "where <filename> is a file present in the current directory.\n";
 
   *env << "Each file's type is inferred from its name suffix:\n";
@@ -87,7 +104,7 @@ int main(int argc, char** argv) {
   *env << "\t\".wav\" => a WAV Audio file\n";
   *env << "\t\".webm\" => a WebM audio(Vorbis)+video(VP8) file\n";
   *env << "See http://www.live555.com/mediaServer/ for additional documentation.\n";
-
+#endif
   // Also, attempt to create a HTTP server for RTSP-over-HTTP tunneling.
   // Try first with the default HTTP port (80), and then with the alternative HTTP
   // port numbers (8000 and 8080).

@@ -1466,21 +1466,21 @@ void RTSPServer::RTSPClientSession
     ServerMediaSubsession* subsession = NULL;
     unsigned trackNum;
     if (fTrackId != NULL && fTrackId[0] != '\0') { // normal case
-          for (trackNum = 0; trackNum < fNumStreamStates; ++trackNum) {
-    	       subsession = fStreamStates[trackNum].subsession;
-    	       if (subsession != NULL && strcmp(fTrackId, subsession->trackId()) == 0) break;
-          }
-          if (trackNum >= fNumStreamStates) {
-            	// The specified track id doesn't exist, so this request fails:
-            	fOurClientConnection->handleCmd_notFound();
-            	break;
-          }
+      for (trackNum = 0; trackNum < fNumStreamStates; ++trackNum) {
+	subsession = fStreamStates[trackNum].subsession;
+	if (subsession != NULL && strcmp(fTrackId, subsession->trackId()) == 0) break;
+      }
+      if (trackNum >= fNumStreamStates) {
+	// The specified track id doesn't exist, so this request fails:
+	fOurClientConnection->handleCmd_notFound();
+	break;
+      }
     } else {
       // Weird case: there was no track id in the URL.
       // This works only if we have only one subsession:
       if (fNumStreamStates != 1 || fStreamStates[0].subsession == NULL) {
-      	fOurClientConnection->handleCmd_bad();
-      	break;
+	fOurClientConnection->handleCmd_bad();
+	break;
       }
       trackNum = 0;
       subsession = fStreamStates[trackNum].subsession;
